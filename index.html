@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FIREBASE COMPAT LIBRARIES -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        /* Theme: Obsidian */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        body { background-color: #0f0f0f; color: #f0f0f0; font-family: -apple-system, system-ui, sans-serif; }
+        .card { background: #181818; border: 1px solid #2a2a2a; }
+        .input-control { background: #222; border: 1px solid #2a2a2a; color: white; }
+        .input-control:focus { border-color: #e2b39b; outline: none; }
+        .text-accent { color: #e2b39b; }
+        .text-green { color: #9be2b3; }
+        .text-red { color: #ff6b6b; }
+        .transition-all { transition-duration: 200ms; }
+        
+        /* Graph specific */
+        .chart-bar:hover .chart-tooltip { opacity: 1; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden text-sm">
+
+    <!-- Mobile Header -->
+    <div class="md:hidden fixed top-0 w-full bg-[#0f0f0f] border-b border-[#2a2a2a] p-4 flex justify-between items-center z-50">
+        <h1 class="text-lg font-bold tracking-wider text-white">EXPENSE<span class="font-normal text-gray-500">TRACKER</span></h1>
+        <button onclick="toggleMenu()" class="p-2 border border-[#2a2a2a] rounded-lg text-gray-400">☰</button>
+    </div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 w-64 bg-[#0f0f0f] border-r border-[#2a2a2a] flex flex-col z-40 transition-transform duration-300 pt-16 md:pt-0">
+        <div class="p-6 border-b border-[#2a2a2a] hidden md:block">
+            <h1 class="text-xl font-bold tracking-wider text-white flex items-center gap-2">
+                <div class="w-8 h-8 bg-[#e2b39b] rounded-lg flex items-center justify-center text-black font-bold">ET</div>
+                EXPENSE
+            </h1>
+            <div class="mt-4 w-full flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-[#222] border border-[#333]">
+                <div id="status-dot" class="w-2 h-2 rounded-full bg-gray-500"></div>
+                <span id="status-text" class="text-gray-400 font-medium truncate">Connecting...</span>
+            </div>
+        </div>
+        
+        <nav class="flex-1 p-4 space-y-1">
+            <button onclick="showSection('dashboard')" id="nav-dashboard" class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:bg-[#222] hover:text-white transition-all font-medium active">Dashboard</button>
+            <button onclick="showSection('daily')" id="nav-daily" class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:bg-[#222] hover:text-white transition-all font-medium">Transactions</button>
+            <button onclick="showSection('credit')" id="nav-credit" class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:bg-[#222] hover:text-white transition-all font-medium">Credit Cards</button>
+            <button onclick="showSection('debts')" id="nav-debts" class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:bg-[#222] hover:text-white transition-all font-medium">Debts & Split</button>
+            <button onclick="showSection('fy-summary')" id="nav-fy-summary" class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:bg-[#222] hover:text-white transition-all font-medium">FY History</button>
+            <button onclick="showSection('settings')" id="nav-settings" class="w-full text-left px-4 py-3 rounded-xl text-gray-400 hover:bg-[#222] hover:text-white transition-all font-medium">Settings</button>
+        </nav>
+
+        <div class="p-4 border-t border-[#2a2a2a]">
+            <button onclick="triggerEndFY()" class="w-full px-4 py-2 rounded-xl border border-[#333] text-[#ff6b6b] hover:bg-[#222] text-xs font-bold uppercase">End Financial Year</button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-hidden flex flex-col relative pt-16 md:pt-0">
+        
+        <!-- DASHBOARD -->
+        <section id="dashboard" class="section-view h-full overflow-y-auto p-6 md:p-8 max-w-7xl mx-auto w-full">
+            <div id="offline-banner" class="mb-6 p-4 rounded-xl bg-gray-800 border border-gray-700 flex items-start gap-3" style="display:none;">
+                <div class="text-yellow-500 font-bold">⚠</div>
+                <div><h4 class="text-white font-bold text-sm">Offline Mode</h4><p class="text-gray-400 text-xs">Data is local. Check connection.</p></div>
+            </div>
+
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-2xl font-bold text-white tracking-tight">Overview</h2>
+                <select id="dashboard-month-filter" onchange="renderDashboard()" class="input-control px-4 py-2 rounded-full cursor-pointer"><option value="all">All Time</option></select>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="card p-6 rounded-3xl"><p class="text-xs font-bold text-gray-500 uppercase mb-2">Income</p><div id="kpi-income" class="text-2xl font-bold text-[#9be2b3] font-mono">₹0</div></div>
+                <div class="card p-6 rounded-3xl"><p class="text-xs font-bold text-gray-500 uppercase mb-2">Expenses</p><div id="kpi-expense" class="text-2xl font-bold text-[#ff6b6b] font-mono">₹0</div></div>
+                <div class="card p-6 rounded-3xl"><p class="text-xs font-bold text-gray-500 uppercase mb-2">Invested</p><div id="kpi-invested" class="text-2xl font-bold text-[#e2b39b] font-mono">₹0</div></div>
+                <div class="card p-6 rounded-3xl"><p class="text-xs font-bold text-gray-500 uppercase mb-2">Savings</p><div id="kpi-savings" class="text-2xl font-bold text-[#b39be2] font-mono">0%</div></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="card p-6 rounded-3xl h-96 flex flex-col items-center justify-center">
+                    <h3 class="text-sm font-bold text-gray-500 uppercase mb-6 w-full text-left">Breakdown</h3>
+                    <div id="category-pie" class="w-48 h-48 rounded-full bg-[#333] relative shadow-2xl"></div>
+                    <div id="pie-legend" class="flex flex-wrap justify-center gap-4 mt-6 text-xs text-gray-400"></div>
+                </div>
+                <div class="card p-6 rounded-3xl h-96 flex flex-col">
+                    <h3 class="text-sm font-bold text-gray-500 uppercase mb-6">Cashflow</h3>
+                    <div class="flex-1 flex items-end justify-around pb-4 border-b border-[#2a2a2a]" id="comparison-bars"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- DAILY -->
+        <section id="daily" class="section-view hidden h-full overflow-y-auto p-6 md:p-8 max-w-7xl mx-auto w-full">
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-2xl font-bold text-white">Transactions</h2>
+                <button onclick="openModal('transaction-modal')" class="bg-white text-black px-4 py-2 rounded-full font-bold hover:bg-gray-200">Add New</button>
+            </div>
+            <div class="flex gap-4 mb-6">
+                <select id="daily-filter-month" onchange="renderDailyList()" class="input-control px-4 py-2 rounded-full w-40"></select>
+                <select id="daily-filter-cat" onchange="renderDailyList()" class="input-control px-4 py-2 rounded-full w-40"></select>
+            </div>
+            <div class="card rounded-3xl overflow-hidden flex-1 flex flex-col min-h-0">
+                <div class="overflow-y-auto flex-1">
+                    <table class="w-full text-left">
+                        <thead class="bg-[#202020] text-xs uppercase text-gray-500 sticky top-0"><tr><th class="p-4">Date</th><th class="p-4">Category</th><th class="p-4">Note</th><th class="p-4 text-right">Amount</th><th class="p-4"></th></tr></thead>
+                        <tbody id="transactions-list" class="divide-y divide-[#2a2a2a]"></tbody>
+                    </table>
+                    <div id="no-transactions" class="hidden p-12 text-center text-gray-600">No transactions found</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CREDIT -->
+        <section id="credit" class="section-view hidden h-full overflow-y-auto p-6 md:p-8 max-w-7xl mx-auto w-full">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-white">Credit Cards</h2>
+                <button onclick="openModal('cc-modal')" class="bg-white text-black px-4 py-2 rounded-full font-bold hover:bg-gray-200 shadow-md flex items-center gap-2">
+                    <span class="text-lg">+</span> Log Bill
+                </button>
+            </div>
+            
+            <div class="flex flex-col lg:flex-row gap-6 h-full pb-8">
+                <!-- Data 30% -->
+                <div class="w-full lg:w-[30%] card p-0 rounded-3xl flex flex-col overflow-hidden h-64 lg:h-auto order-2 lg:order-1">
+                    <div class="p-4 bg-[#202020] border-b border-[#2a2a2a] flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-400 uppercase">History</h3>
+                    </div>
+                    <div class="overflow-y-auto flex-1">
+                        <table class="w-full text-left">
+                            <thead class="text-xs text-gray-500 uppercase border-b border-[#2a2a2a] bg-[#151515]"><tr><th class="p-3">Month</th><th class="p-3">Card</th><th class="p-3 text-right">Amt</th><th class="p-3"></th></tr></thead>
+                            <tbody id="cc-list" class="divide-y divide-[#2a2a2a]"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Graph 70% -->
+                <div class="w-full lg:w-[70%] card p-6 rounded-3xl flex flex-col h-96 lg:h-auto order-1 lg:order-2">
+                    <div class="flex justify-between items-center mb-4">
+                         <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest">Spending Trend</h3>
+                    </div>
+                    
+                    <div class="flex-1 flex flex-col relative overflow-hidden">
+                        <!-- Chart Container -->
+                        <div id="cc-html-chart" class="flex-1 flex items-end gap-2 overflow-x-auto pb-6 custom-scrollbar" style="min-width: 0;">
+                             <!-- Bars injected here -->
+                        </div>
+                    </div>
+                    
+                    <div id="cc-legend" class="flex flex-wrap justify-center gap-4 mt-4 pt-4 border-t border-[#2a2a2a] text-xs text-gray-400"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- DEBTS -->
+        <section id="debts" class="section-view hidden h-full overflow-y-auto p-6 md:p-8 max-w-7xl mx-auto w-full">
+            <h2 class="text-2xl font-bold text-white mb-8">Debts</h2>
+            <div class="grid grid-cols-3 gap-4 mb-8">
+                <div class="card p-4 rounded-xl border-l-4 border-red-500"><p class="text-xs text-gray-500 uppercase">I Owe</p><div id="debt-total-payable" class="text-xl font-bold text-red-500 font-mono">0</div></div>
+                <div class="card p-4 rounded-xl border-l-4 border-green-500"><p class="text-xs text-gray-500 uppercase">Owes Me</p><div id="debt-total-receivable" class="text-xl font-bold text-green-500 font-mono">0</div></div>
+                <div class="card p-4 rounded-xl border-l-4 border-gray-500"><p class="text-xs text-gray-500 uppercase">Net</p><div id="debt-net-balance" class="text-xl font-bold text-white font-mono">0</div></div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full pb-8">
+                <div class="card flex flex-col rounded-3xl overflow-hidden h-64 lg:h-auto"><div class="p-4 bg-[#202020] border-b border-[#2a2a2a] font-bold text-gray-400 text-xs uppercase">People</div><div id="debt-person-list" class="p-4 overflow-y-auto space-y-2 flex-1"></div></div>
+                <div class="lg:col-span-2 flex flex-col gap-6">
+                    <div class="card p-6 rounded-3xl">
+                        <form onsubmit="addDebt(event)" class="flex flex-wrap gap-4 items-end">
+                            <input type="text" id="d-person" required class="input-control flex-1 p-2 rounded-lg" placeholder="Name">
+                            <input type="text" id="d-desc" required class="input-control flex-[2] p-2 rounded-lg" placeholder="Reason">
+                            <input type="number" id="d-amount" required class="input-control w-24 p-2 rounded-lg" placeholder="Amt">
+                            <select id="d-type" class="input-control w-32 p-2 rounded-lg"><option value="payable">I Owe</option><option value="receivable">Owes Me</option></select>
+                            <button class="bg-white text-black px-6 py-2 rounded-lg font-bold">Add</button>
+                        </form>
+                    </div>
+                    <div class="card p-0 rounded-3xl flex-1 flex flex-col overflow-hidden"><div class="p-4 bg-[#202020] border-b border-[#2a2a2a] font-bold text-gray-400 text-xs uppercase">History</div><div class="overflow-y-auto flex-1"><table class="w-full text-left"><tbody id="debt-history-list" class="divide-y divide-[#2a2a2a]"></tbody></table></div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FY -->
+        <section id="fy-summary" class="section-view hidden h-full overflow-y-auto p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-white mb-8">Archives</h2>
+            <div id="fy-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+            <div id="no-fy-data" class="hidden text-center text-gray-600 mt-10">No archives found.</div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section id="settings" class="section-view hidden h-full overflow-y-auto p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-white mb-8">Settings</h2>
+            
+            <div class="card p-6 rounded-3xl mb-8">
+                <h3 class="text-lg font-bold text-white mb-2">Cloud Status</h3>
+                <p id="cloud-status-msg" class="text-sm text-gray-500 mb-4">Initializing...</p>
+                <div class="bg-black p-4 rounded-lg border border-[#333] mb-4 font-mono text-xs text-green-400 overflow-x-auto">
+                    Project: myexpensetracker-be500 <br>
+                    ID: <span id="user-id-disp">...</span>
+                </div>
+            </div>
+
+            <!-- Categories & Payment Modes (Simplified View) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Categories</h3><div class="flex gap-2 mb-2"><input id="new-cat-name" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><button onclick="addCategory()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-categories" class="overflow-y-auto flex-1 space-y-1"></div></div>
+                <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Payments</h3><div class="flex gap-2 mb-2"><input id="new-pay-mode" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><button onclick="addPaymentMode()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-payments" class="overflow-y-auto flex-1 space-y-1"></div></div>
+                <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Cards</h3><div class="flex gap-2 mb-2"><input id="new-card-track" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><button onclick="addTrackedCard()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-cards" class="overflow-y-auto flex-1 space-y-1"></div></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- TRANSACTION MODAL -->
+    <div id="transaction-modal" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#1a1a1a] w-full max-w-md rounded-3xl p-8 border border-[#333] relative">
+            <button onclick="closeModal('transaction-modal')" class="absolute top-4 right-4 text-gray-500 hover:text-white">✕</button>
+            <h2 class="text-xl font-bold text-white mb-6">New Entry</h2>
+            <form onsubmit="addTransaction(event)" class="space-y-4">
+                <input type="date" id="t-date" required class="input-control w-full p-3 rounded-xl">
+                <div class="flex gap-2 bg-[#222] p-1 rounded-xl">
+                    <label class="flex-1 text-center py-2 cursor-pointer hover:bg-[#333] rounded-lg"><input type="radio" name="t-type" value="expense" checked onchange="toggleCategorySelect()" class="mr-2">Expense</label>
+                    <label class="flex-1 text-center py-2 cursor-pointer hover:bg-[#333] rounded-lg"><input type="radio" name="t-type" value="income" onchange="toggleCategorySelect()" class="mr-2">Income</label>
+                </div>
+                <div id="category-wrapper"><label class="text-xs text-gray-500 mb-1 block">Category</label><select id="t-category" class="input-control w-full p-3 rounded-xl"></select></div>
+                <div><label class="text-xs text-gray-500 mb-1 block">Paid Via</label><select id="t-paid-via" class="input-control w-full p-3 rounded-xl"></select></div>
+                <input type="number" id="t-amount" step="0.01" required class="input-control w-full p-3 rounded-xl text-lg font-mono" placeholder="0.00">
+                <input type="text" id="t-note" class="input-control w-full p-3 rounded-xl" placeholder="Note">
+                <button class="w-full bg-white text-black py-3 rounded-xl font-bold">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- CREDIT CARD MODAL -->
+    <div id="cc-modal" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#1a1a1a] w-full max-w-md rounded-3xl p-8 border border-[#333] relative">
+            <button onclick="closeModal('cc-modal')" class="absolute top-4 right-4 text-gray-500 hover:text-white">✕</button>
+            <h2 class="text-xl font-bold text-white mb-6">Log Credit Card Bill</h2>
+            <form onsubmit="addCCBill(event)" class="space-y-4">
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">Statement Month</label>
+                    <input type="month" id="cc-month" required class="input-control w-full p-3 rounded-xl">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">Select Card</label>
+                    <select id="cc-card" class="input-control w-full p-3 rounded-xl"></select>
+                </div>
+                <input type="number" id="cc-amount" step="0.01" required class="input-control w-full p-3 rounded-xl text-lg font-mono" placeholder="Amount (₹)">
+                <button class="w-full bg-white text-black py-3 rounded-xl font-bold">Save Bill</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN SCRIPT -->
+    <script>
+        // --- 1. CONFIG & STATE ---
+        const HARDCODED_CONFIG = {
+          apiKey: "AIzaSyBfmief4c20ImAYAtzK4MykJnUK9PMKxVQ",
+          authDomain: "myexpensetracker-be500.firebaseapp.com",
+          projectId: "myexpensetracker-be500",
+          storageBucket: "myexpensetracker-be500.firebasestorage.app",
+          messagingSenderId: "54643659176",
+          appId: "1:54643659176:web:42d05ac1ca0f7bb7f5cd9d"
+        };
+
+        const appState = {
+            isCloud: false,
+            userId: null,
+            data: {
+                transactions: [], creditCards: [], debts: [], fyHistory: [],
+                settings: {
+                    categories: [
+                        { name: 'Groceries', color: '#e2b39b' }, { name: 'Eat Out', color: '#ff6b6b' }, { name: 'Fuel & Travel', color: '#9be2b3' },
+                        { name: 'Rent', color: '#b39be2' }, { name: 'Gym Supplements', color: '#f2c94c' }, { name: 'Gym Membership', color: '#27ae60' },
+                        { name: 'Entertainment', color: '#bb6bd9' }, { name: 'EMI', color: '#56ccf2' }, { name: 'Investment', color: '#2f80ed' }, { name: 'Other', color: '#828282' }
+                    ],
+                    paymentModes: ['ICICI Savings', 'HDFC Savings', 'SBI Savings', 'ICICI Amazon', 'ICICI Rupay', 'HDFC Swiggy', 'IDFC Credit', 'Scapia', 'Cash'],
+                    trackedCards: ['HDFC Swiggy', 'ICICI Amazon', 'ICICI Rupay']
+                }
+            }
+        };
+
+        const fmtMoney = (n) => '₹' + n.toLocaleString('en-IN');
+        const getCatColor = (n) => {
+            if(n==='Salary') return '#27ae60';
+            const c = appState.data.settings.categories.find(x => x.name === n);
+            return c ? c.color : '#888';
+        };
+        
+        // 2. UI FUNCTIONS
+        function showSection(id) {
+            document.querySelectorAll('.section-view').forEach(el => el.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            
+            document.querySelectorAll('aside button').forEach(b => {
+                b.classList.remove('bg-[#222]', 'text-white', 'active');
+                b.classList.add('text-gray-400');
+            });
+            const btn = document.getElementById('nav-'+id);
+            if(btn) {
+                btn.classList.add('bg-[#222]', 'text-white', 'active');
+                btn.classList.remove('text-gray-400');
+            }
+            if(window.innerWidth < 768) document.getElementById('sidebar').classList.add('-translate-x-full');
+            updateUI();
+        }
+
+        function toggleMenu() { document.getElementById('sidebar').classList.toggle('-translate-x-full'); }
+        
+        function openModal(id) { 
+            populateDropdowns(); 
+            document.getElementById(id).classList.remove('hidden'); 
+        }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        
+        function toggleCategorySelect() {
+            const t = document.querySelector('input[name="t-type"]:checked').value;
+            const w = document.getElementById('category-wrapper');
+            if(t==='income') { w.style.opacity='0.3'; w.style.pointerEvents='none'; } else { w.style.opacity='1'; w.style.pointerEvents='auto'; }
+        }
+
+        // 3. CORE LOGIC
+        function initApp() {
+            if (!firebase.apps.length) firebase.initializeApp(HARDCODED_CONFIG);
+            const auth = firebase.auth();
+            const db = firebase.firestore();
+
+            const SHARED_UID = "shared_user_v1";
+
+            auth.signInAnonymously()
+                .then(cred => {
+                    appState.isCloud = true;
+                    appState.userId = SHARED_UID; 
+                    appState.db = db;
+                    
+                    document.getElementById('status-dot').className = "w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]";
+                    document.getElementById('status-text').innerText = "Cloud Sync";
+                    document.getElementById('status-text').classList.add('text-green-500');
+                    document.getElementById('offline-banner').style.display = 'none';
+                    document.getElementById('cloud-status-msg').innerText = "Connected Securely.";
+                    document.getElementById('user-id-disp').innerText = SHARED_UID;
+                    
+                    setupListeners(db, SHARED_UID);
+                })
+                .catch(e => {
+                    console.error("Auth Fail", e);
+                    const stored = localStorage.getItem('bt_data_v2');
+                    if(stored) try { appState.data = {...appState.data, ...JSON.parse(stored)}; } catch(err){}
+                    updateUI();
+                });
+            
+            document.getElementById('t-date').valueAsDate = new Date();
+        }
+
+        function setupListeners(db, uid) {
+            const path = `artifacts/${HARDCODED_CONFIG.projectId}/users/${uid}`;
+            db.collection(path+'/transactions').onSnapshot(s => { appState.data.transactions = s.docs.map(d=>({id:d.id, ...d.data()})); updateUI(); });
+            db.collection(path+'/credit_cards').onSnapshot(s => { appState.data.creditCards = s.docs.map(d=>({id:d.id, ...d.data()})); updateUI(); });
+            db.collection(path+'/debts').onSnapshot(s => { appState.data.debts = s.docs.map(d=>({id:d.id, ...d.data()})); updateUI(); });
+            db.collection(path+'/fy_history').onSnapshot(s => { appState.data.fyHistory = s.docs.map(d=>({id:d.id, ...d.data()})); updateUI(); });
+            
+            db.doc(path+'/config/settings').onSnapshot(s => {
+                if(s.exists) { appState.data.settings = s.data(); updateUI(); }
+                else db.doc(path+'/config/settings').set(appState.data.settings);
+            });
+        }
+
+        function saveData() {
+            if(!appState.isCloud) {
+                localStorage.setItem('bt_data_v2', JSON.stringify(appState.data));
+                updateUI();
+            }
+        }
+
+        // 4. ACTION HANDLERS
+        function addTransaction(e) {
+            e.preventDefault();
+            closeModal('transaction-modal'); // Close immediately
+            
+            const date = document.getElementById('t-date').value;
+            const type = document.querySelector('input[name="t-type"]:checked').value;
+            const category = type === 'income' ? 'Salary' : document.getElementById('t-category').value;
+            const item = {
+                date, type, category,
+                paidVia: document.getElementById('t-paid-via').value,
+                amount: parseFloat(document.getElementById('t-amount').value),
+                note: document.getElementById('t-note').value,
+                timestamp: Date.now()
+            };
+
+            if (appState.isCloud) {
+                appState.db.collection(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/transactions`).add(item);
+            } else {
+                item.id = Date.now().toString();
+                appState.data.transactions.push(item);
+                saveData();
+            }
+            e.target.reset(); document.getElementById('t-date').valueAsDate = new Date();
+        }
+
+        function deleteTransaction(id) {
+            if(!confirm("Delete?")) return;
+            if(appState.isCloud) appState.db.doc(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/transactions/${id}`).delete();
+            else {
+                appState.data.transactions = appState.data.transactions.filter(t => t.id !== id);
+                saveData();
+            }
+        }
+
+        async function addCCBill(e) {
+            e.preventDefault();
+            closeModal('cc-modal'); // Close immediately
+
+            const monthYear = document.getElementById('cc-month').value;
+            const card = document.getElementById('cc-card').value;
+            const amount = parseFloat(document.getElementById('cc-amount').value);
+
+            // Find existing to update
+            const existing = appState.data.creditCards.find(c => c.monthYear === monthYear && c.card === card);
+
+            if (appState.isCloud) {
+                const colRef = appState.db.collection(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/credit_cards`);
+                if (existing) {
+                    await colRef.doc(existing.id).update({ amount });
+                } else {
+                    await colRef.add({ monthYear, card, amount });
+                }
+            } else {
+                if (existing) {
+                    existing.amount = amount;
+                } else {
+                    appState.data.creditCards.push({ id: Date.now().toString(), monthYear, card, amount });
+                }
+                saveData();
+            }
+            document.getElementById('cc-amount').value = '';
+        }
+        
+        function deleteCCBill(id) { if(!confirm("Delete?")) return; if(appState.isCloud) appState.db.doc(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/credit_cards/${id}`).delete(); else { appState.data.creditCards = appState.data.creditCards.filter(c => c.id !== id); saveData(); } }
+
+        function addDebt(e) {
+            e.preventDefault();
+            const item = {
+                date: new Date().toISOString().split('T')[0],
+                person: document.getElementById('d-person').value,
+                desc: document.getElementById('d-desc').value,
+                amount: parseFloat(document.getElementById('d-amount').value),
+                type: document.getElementById('d-type').value,
+                timestamp: Date.now()
+            };
+            if(appState.isCloud) appState.db.collection(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/debts`).add(item);
+            else { item.id = Date.now().toString(); appState.data.debts.push(item); saveData(); }
+            e.target.reset();
+        }
+        function deleteDebt(id) { if(!confirm("Delete?")) return; if(appState.isCloud) appState.db.doc(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/debts/${id}`).delete(); else { appState.data.debts = appState.data.debts.filter(d => d.id !== id); saveData(); } }
+
+        function addCategory() {
+            const name = document.getElementById('new-cat-name').value;
+            const color = document.getElementById('new-cat-color').value;
+            if(name) {
+                appState.data.settings.categories.push({name,color});
+                document.getElementById('new-cat-name').value='';
+                if(appState.isCloud) saveSettings(); else saveData();
+            }
+        }
+        function deleteCategory(i) {
+            if(confirm("Delete?")) {
+                appState.data.settings.categories.splice(i,1);
+                if(appState.isCloud) saveSettings(); else saveData();
+            }
+        }
+        function saveSettings() {
+             if(appState.isCloud) appState.db.doc(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/config/settings`).set(appState.data.settings);
+        }
+        
+        function addPaymentMode() { const val = document.getElementById('new-pay-mode').value; if(val) { appState.data.settings.paymentModes.push(val); document.getElementById('new-pay-mode').value=''; if(appState.isCloud) saveSettings(); else saveData(); } }
+        function deletePaymentMode(i) { if(confirm('Delete?')) { appState.data.settings.paymentModes.splice(i, 1); if(appState.isCloud) saveSettings(); else saveData(); }}
+
+        function addTrackedCard() { const val = document.getElementById('new-card-track').value; if(val) { appState.data.settings.trackedCards.push(val); document.getElementById('new-card-track').value=''; if(appState.isCloud) saveSettings(); else saveData(); } }
+        function deleteTrackedCard(i) { if(confirm('Delete?')) { appState.data.settings.trackedCards.splice(i, 1); if(appState.isCloud) saveSettings(); else saveData(); }}
+
+        function triggerEndFY() {
+            if(!confirm("End FY? This archives data and WIPES transactions.")) return;
+            const txs = appState.data.transactions;
+            const inc = txs.reduce((s,t)=>t.type==='income'?s+t.amount:s,0);
+            const exp = txs.reduce((s,t)=>t.type==='expense'&&t.category!=='Investment'?s+t.amount:s,0);
+            const inv = txs.reduce((s,t)=>t.category==='Investment'?s+t.amount:s,0);
+            const archive = { dateEnded: new Date().toISOString(), totals: {income:inc, expense:exp, invest:inv} };
+
+            if(appState.isCloud) {
+                const path = `artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}`;
+                appState.db.collection(path+'/fy_history').add(archive);
+                // Simple batch delete
+                const batch = appState.db.batch();
+                txs.forEach(t => batch.delete(appState.db.doc(path+'/transactions/'+t.id)));
+                batch.commit();
+            } else {
+                archive.id = Date.now().toString();
+                appState.data.fyHistory.push(archive);
+                appState.data.transactions = [];
+                saveData();
+            }
+            alert("FY Ended");
+            showSection('fy-summary');
+        }
+
+        // 5. RENDERERS
+        function updateUI() {
+            populateDropdowns(); renderDashboard(); renderDailyList(); renderCC(); renderDebts(); renderSettings(); renderFY(); renderCCChart();
+        }
+
+        function populateDropdowns() {
+            const makeOpts = (arr) => arr.map(x => `<option value="${x.name || x}">${x.name || x}</option>`).join('');
+            document.getElementById('t-category').innerHTML = makeOpts(appState.data.settings.categories);
+            document.getElementById('t-paid-via').innerHTML = makeOpts(appState.data.settings.paymentModes);
+            document.getElementById('cc-card').innerHTML = makeOpts(appState.data.settings.trackedCards);
+            
+            // Fix: Force refresh options but try to keep value
+            const catF = document.getElementById('daily-filter-cat');
+            const currentVal = catF.value;
+            catF.innerHTML = `<option value="all">All Categories</option>` + makeOpts(appState.data.settings.categories);
+            if(currentVal && currentVal !== 'all') catF.value = currentVal;
+            else catF.value = 'all';
+        }
+
+        function renderDashboard() {
+            const txs = appState.data.transactions.sort((a,b)=>new Date(b.date)-new Date(a.date));
+            const months = [...new Set(txs.map(t=>t.date.substring(0,7)))];
+            const fe = document.getElementById('dashboard-month-filter');
+            const cur = fe.value;
+            fe.innerHTML = `<option value="all">All Time</option>` + months.map(m=>`<option value="${m}">${m}</option>`).join('');
+            if(months.includes(cur)) fe.value = cur;
+
+            const list = fe.value === 'all' ? txs : txs.filter(t=>t.date.startsWith(fe.value));
+            
+            const inc = list.reduce((s,t)=>t.type==='income'?s+t.amount:s, 0);
+            const exp = list.reduce((s,t)=>t.type==='expense' && t.category !== 'Investment'?s+t.amount:s, 0);
+            const inv = list.reduce((s,t)=>t.category === 'Investment'?s+t.amount:s, 0);
+            const savRate = inc > 0 ? ((inc-exp)/inc*100).toFixed(1) : 0;
+
+            document.getElementById('kpi-income').innerText = fmtMoney(inc);
+            document.getElementById('kpi-expense').innerText = fmtMoney(exp);
+            document.getElementById('kpi-invested').innerText = fmtMoney(inv);
+            document.getElementById('kpi-savings').innerText = savRate + '%';
+
+            // Pie
+            const cats = {}; let tot = 0;
+            list.forEach(t => { if(t.type==='expense') { cats[t.category] = (cats[t.category]||0)+t.amount; tot+=t.amount; }});
+            const pieEl = document.getElementById('category-pie');
+            const legEl = document.getElementById('pie-legend');
+            legEl.innerHTML = '';
+            
+            if(tot === 0) pieEl.style.background = '#333';
+            else {
+                let d = 0, g = [];
+                Object.keys(cats).forEach(c => {
+                    const p = (cats[c]/tot)*100;
+                    const col = getCatColor(c);
+                    g.push(`${col} ${d}% ${d+p}%`);
+                    d += p;
+                    legEl.innerHTML += `<div class="flex items-center gap-1"><div class="w-2 h-2 rounded-full" style="background:${col}"></div><span>${c}</span></div>`;
+                });
+                pieEl.style.background = `conic-gradient(${g.join(', ')})`;
+            }
+
+            // Bars
+            const max = Math.max(inc,exp,inv,100);
+            document.getElementById('comparison-bars').innerHTML = `
+                <div class="flex flex-col items-center w-1/4 h-full justify-end"><div class="text-[#9be2b3] font-mono font-bold mb-1 text-xs">Inc</div><div class="w-full bg-[#9be2b3] rounded-t-lg transition-all" style="height:${inc/max*100}%"></div></div>
+                <div class="flex flex-col items-center w-1/4 h-full justify-end"><div class="text-[#ff6b6b] font-mono font-bold mb-1 text-xs">Exp</div><div class="w-full bg-[#ff6b6b] rounded-t-lg transition-all" style="height:${exp/max*100}%"></div></div>
+                <div class="flex flex-col items-center w-1/4 h-full justify-end"><div class="text-[#e2b39b] font-mono font-bold mb-1 text-xs">Inv</div><div class="w-full bg-[#e2b39b] rounded-t-lg transition-all" style="height:${inv/max*100}%"></div></div>
+            `;
+        }
+
+        function renderDailyList() {
+            const mFilter = document.getElementById('daily-filter-month');
+            const cFilter = document.getElementById('daily-filter-cat');
+            const txs = appState.data.transactions.sort((a,b) => new Date(b.date) - new Date(a.date));
+            const months = [...new Set(txs.map(t => t.date.substring(0,7)))].sort().reverse();
+            
+            // Fix: Rebuild Month filter safely
+            const curM = mFilter.value;
+            mFilter.innerHTML = `<option value="all">All Months</option>` + months.map(m=>`<option value="${m}">${m}</option>`).join('');
+            if(months.includes(curM)) mFilter.value = curM;
+            else mFilter.value = 'all';
+
+            let list = txs;
+            if(mFilter.value !== 'all') list = list.filter(t => t.date.startsWith(mFilter.value));
+            // Check for valid category filter. If "All Categories" or empty, show everything.
+            if(cFilter.value !== 'all' && cFilter.value !== '') list = list.filter(t => t.category === cFilter.value);
+
+            const tbody = document.getElementById('transactions-list');
+            tbody.innerHTML = '';
+            
+            if(list.length === 0) document.getElementById('no-transactions').classList.remove('hidden');
+            else {
+                document.getElementById('no-transactions').classList.add('hidden');
+                list.forEach(t => {
+                    const isInc = t.type === 'income';
+                    const col = getCatColor(t.category);
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-[#1a1a1a] border-b border-[#2a2a2a]">
+                            <td class="p-4 text-gray-400 font-mono text-xs">${t.date}</td>
+                            <td class="p-4"><span class="px-3 py-1 rounded-full text-xs font-bold uppercase" style="background:${col}33; color:${col}">${t.category}</span></td>
+                            <td class="p-4"><div class="text-white text-sm">${t.note || '-'}</div><div class="text-xs text-gray-600 mt-1">${t.paidVia}</div></td>
+                            <td class="p-4 text-right font-mono font-bold ${isInc ? 'text-[#9be2b3]' : 'text-[#ff6b6b]'}">${isInc?'+':'-'}${fmtMoney(t.amount)}</td>
+                            <td class="p-4 text-center"><button onclick="deleteTransaction('${t.id}')" class="text-gray-600 hover:text-red-500 transition-colors">✕</button></td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+
+        function renderCC() {
+            const list = appState.data.creditCards;
+            document.getElementById('cc-list').innerHTML = list.map(c => `<tr><td class="p-4 text-white font-mono text-xs">${c.monthYear}</td><td class="p-4 text-gray-400 text-xs">${c.card}</td><td class="p-4 text-right font-mono text-white text-sm">${fmtMoney(c.amount)}</td><td class="p-4 text-center"><button onclick="deleteCCBill('${c.id}')" class="text-gray-600 hover:text-red-500">✕</button></td></tr>`).join('');
+        }
+
+        function renderDebts() {
+            let pay=0, rec=0; const map={};
+            appState.data.debts.forEach(d => {
+                if(d.type==='payable') { pay+=d.amount; map[d.person] = (map[d.person]||0)-d.amount; }
+                else { rec+=d.amount; map[d.person] = (map[d.person]||0)+d.amount; }
+            });
+            document.getElementById('debt-total-payable').innerText=fmtMoney(pay);
+            document.getElementById('debt-total-receivable').innerText=fmtMoney(rec);
+            document.getElementById('debt-net-balance').innerText=fmtMoney(Math.abs(rec-pay));
+            
+            const pl = document.getElementById('debt-person-list');
+            pl.innerHTML = '';
+            Object.keys(map).forEach(p => {
+                if(map[p]!==0) {
+                    const isRec = map[p]>0;
+                    pl.innerHTML += `<div class="flex justify-between items-center p-3 bg-[#1a1a1a] rounded-xl border-l-4 ${isRec?'border-[#9be2b3]':'border-[#ff6b6b]'} mb-2"><div><div class="font-bold text-white">${p}</div><div class="text-xs uppercase font-bold tracking-wider ${isRec?'text-[#9be2b3]':'text-[#ff6b6b]'}">${isRec?'Owes You':'You Owe'}</div></div><div class="font-mono font-bold text-white">${fmtMoney(Math.abs(map[p]))}</div></div>`;
+                }
+            });
+            
+            const hl = document.getElementById('debt-history-list');
+            hl.innerHTML = appState.data.debts.sort((a,b)=>b.timestamp-a.timestamp).map(d => `<tr><td class="p-3 text-gray-500 text-xs font-mono">${d.date}</td><td class="p-3 text-white text-sm">${d.person}</td><td class="p-3 text-gray-400 text-xs">${d.desc}</td><td class="p-3 text-right font-mono text-sm ${d.type==='receivable'?'text-[#9be2b3]':'text-[#ff6b6b]'}">${fmtMoney(d.amount)}</td><td class="p-3 text-center"><button onclick="deleteDebt('${d.id}')" class="text-gray-600 hover:text-red-500">✕</button></td></tr>`).join('');
+        }
+
+        function renderSettings() {
+            document.getElementById('settings-categories').innerHTML = appState.data.settings.categories.map((c, i) => `<div class="flex justify-between items-center p-2 bg-[#1a1a1a] rounded-lg border border-[#333] mb-1"><div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full" style="background:${c.color}"></div><span class="text-sm text-gray-300">${c.name}</span></div><button onclick="deleteCategory(${i})" class="text-gray-600 hover:text-red-500">✕</button></div>`).join('');
+            document.getElementById('settings-payments').innerHTML = appState.data.settings.paymentModes.map((p, i) => `<div class="flex justify-between items-center p-2 bg-[#1a1a1a] rounded-lg border border-[#333] mb-1"><span class="text-sm text-gray-300">${p}</span><button onclick="deletePaymentMode(${i})" class="text-gray-600 hover:text-red-500">✕</button></div>`).join('');
+            document.getElementById('settings-cards').innerHTML = appState.data.settings.trackedCards.map((c, i) => `<div class="flex justify-between items-center p-2 bg-[#1a1a1a] rounded-lg border border-[#333] mb-1"><span class="text-sm text-gray-300">${c}</span><button onclick="deleteTrackedCard(${i})" class="text-gray-600 hover:text-red-500">✕</button></div>`).join('');
+        }
+        
+        function renderCCChart() {
+            const chartDiv = document.getElementById('cc-html-chart');
+            const legendEl = document.getElementById('cc-legend');
+            if(!chartDiv || !legendEl) return;
+
+            // Get Sorted Unique Months
+            let months = [...new Set(appState.data.creditCards.map(c => c.monthYear))].sort();
+
+            if (months.length === 0) {
+                 chartDiv.innerHTML = '<div class="flex items-center justify-center w-full h-full text-gray-500 text-xs">No data available</div>';
+                 legendEl.innerHTML = '';
+                 return;
+            }
+
+            const cards = appState.data.settings.trackedCards;
+            // Dynamic colors
+            const baseColors = ['#f97316', '#eab308', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#ec4899', '#6366f1']; 
+            
+            // Prepare Data Map: month -> { card: amount }
+            const dataMap = {};
+            let maxVal = 0;
+            
+            months.forEach(m => {
+                dataMap[m] = {};
+                cards.forEach(card => {
+                    const entry = appState.data.creditCards.find(c => c.monthYear === m && c.card === card);
+                    const val = entry ? entry.amount : 0;
+                    dataMap[m][card] = val;
+                    if (val > maxVal) maxVal = val;
+                });
+            });
+            maxVal = maxVal * 1.1; // Headroom
+
+            // Render HTML Bars
+            let html = '';
+            
+            months.forEach(m => {
+                const dateObj = new Date(m + '-01');
+                const label = dateObj.toLocaleDateString('en-US', {month:'short', year:'numeric'}); // Dec 2025
+                
+                // Group Container
+                html += `<div class="flex flex-col items-center justify-end h-full gap-2 min-w-[80px]">
+                            <div class="flex items-end gap-1 h-full w-full justify-center">`;
+                
+                // Bars for each card in this month
+                cards.forEach((card, idx) => {
+                    const val = dataMap[m][card] || 0;
+                    const h = (val / maxVal) * 100;
+                    const col = baseColors[idx % baseColors.length];
+                    
+                    if(val > 0) {
+                        html += `<div class="chart-bar w-3 rounded-t-sm transition-all duration-500 hover:opacity-80 relative group" style="height:${h}%; background-color:${col};">
+                                    <div class="chart-tooltip absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-[10px] rounded opacity-0 pointer-events-none z-10 border border-[#333] transition-opacity whitespace-nowrap">₹${val}</div>
+                                 </div>`;
+                    }
+                });
+                
+                html += `   </div>
+                            <div class="text-[10px] text-gray-500 font-medium whitespace-nowrap">${label}</div>
+                         </div>`;
+            });
+
+            chartDiv.innerHTML = html;
+
+            // Legend
+            legendEl.innerHTML = cards.map((c, i) => `
+                <div class="flex items-center gap-2 text-xs font-medium text-gray-400">
+                    <div class="w-2 h-2 rounded-full" style="background:${baseColors[i % baseColors.length]}"></div>
+                    ${c}
+                </div>
+            `).join('');
+        }
+
+        // INIT
+        window.addEventListener('DOMContentLoaded', () => {
+            initApp();
+        });
+
+    </script>
+</body>
+</html>

@@ -26,8 +26,8 @@
         .text-red { color: #ff6b6b; }
         .transition-all { transition-duration: 200ms; }
         
-        /* Chart Tooltip */
-        .group:hover .chart-tooltip { opacity: 1; visibility: visible; }
+        /* Graph specific */
+        .chart-bar:hover .chart-tooltip { opacity: 1; }
     </style>
 </head>
 <body class="h-screen flex overflow-hidden text-sm">
@@ -210,8 +210,8 @@
 
             <!-- Categories & Payment Modes (Simplified View) -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Categories</h3><div class="flex gap-2 mb-2"><input id="new-cat-name" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><button onclick="addCategory()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-categories" class="overflow-y-auto flex-1 space-y-1"></div></div>
-                <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Payments</h3><div class="flex gap-2 mb-2"><input id="new-pay-mode" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><button onclick="addPaymentMode()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-payments" class="overflow-y-auto flex-1 space-y-1"></div></div>
+                <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Categories</h3><div class="flex gap-2 mb-2"><input id="new-cat-name" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><input id="new-cat-color" type="color" value="#e2b39b" class="bg-transparent h-8 w-8 cursor-pointer rounded"><button onclick="addCategory()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-categories" class="overflow-y-auto flex-1 space-y-1"></div></div>
+                <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Payments</h3><div class="flex gap-2 mb-2"><input id="new-pay-mode" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><input id="new-pay-color" type="color" value="#9be2b3" class="bg-transparent h-8 w-8 cursor-pointer rounded"><button onclick="addPaymentMode()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-payments" class="overflow-y-auto flex-1 space-y-1"></div></div>
                 <div class="card p-4 rounded-2xl h-64 overflow-hidden flex flex-col"><h3 class="mb-2 text-xs font-bold text-gray-500 uppercase">Cards</h3><div class="flex gap-2 mb-2"><input id="new-card-track" class="input-control flex-1 p-1 rounded text-xs" placeholder="Name"><button onclick="addTrackedCard()" class="bg-white text-black px-2 rounded font-bold">+</button></div><div id="settings-cards" class="overflow-y-auto flex-1 space-y-1"></div></div>
             </div>
         </section>
@@ -280,17 +280,34 @@
                         { name: 'Rent', color: '#b39be2' }, { name: 'Gym Supplements', color: '#f2c94c' }, { name: 'Gym Membership', color: '#27ae60' },
                         { name: 'Entertainment', color: '#bb6bd9' }, { name: 'EMI', color: '#56ccf2' }, { name: 'Investment', color: '#2f80ed' }, { name: 'Other', color: '#828282' }
                     ],
-                    paymentModes: ['ICICI Savings', 'HDFC Savings', 'SBI Savings', 'ICICI Amazon', 'ICICI Rupay', 'HDFC Swiggy', 'IDFC Credit', 'Scapia', 'Cash'],
+                    paymentModes: [
+                        { name: 'ICICI Savings Account', color: '#f97316' }, 
+                        { name: 'HDFC Savings Account', color: '#ef4444' }, 
+                        { name: 'SBI Savings Account', color: '#3b82f6' },
+                        { name: 'ICICI Amazon Card', color: '#facc15' }, 
+                        { name: 'ICICI Rupay Card', color: '#a855f7' }, 
+                        { name: 'HDFC Swiggy', color: '#fb923c' },
+                        { name: 'IDFC Credit Card', color: '#ec4899' }, 
+                        { name: 'Scapia Card', color: '#14b8a6' }, 
+                        { name: 'Cash', color: '#6b7280' }
+                    ],
                     trackedCards: ['HDFC Swiggy', 'ICICI Amazon', 'ICICI Rupay']
                 }
             }
         };
 
         const fmtMoney = (n) => '₹' + n.toLocaleString('en-IN');
+        
         const getCatColor = (n) => {
             if(n==='Salary') return '#27ae60';
             const c = appState.data.settings.categories.find(x => x.name === n);
             return c ? c.color : '#888';
+        };
+
+        const getPayColor = (n) => {
+            const p = appState.data.settings.paymentModes.find(x => (typeof x === 'object' ? x.name : x) === n);
+            if (!p) return '#888';
+            return typeof p === 'object' ? p.color : '#888';
         };
         
         // 2. UI FUNCTIONS
@@ -351,7 +368,14 @@
                 .catch(e => {
                     console.error("Auth Fail", e);
                     const stored = localStorage.getItem('bt_data_v2');
-                    if(stored) try { appState.data = {...appState.data, ...JSON.parse(stored)}; } catch(err){}
+                    if(stored) try { 
+                        const parsed = JSON.parse(stored);
+                        // Fix for legacy payment modes (string array)
+                        if (parsed.settings && parsed.settings.paymentModes && typeof parsed.settings.paymentModes[0] === 'string') {
+                             parsed.settings.paymentModes = parsed.settings.paymentModes.map(p => ({ name: p, color: '#888' }));
+                        }
+                        appState.data = {...appState.data, ...parsed}; 
+                    } catch(err){}
                     updateUI();
                 });
             
@@ -366,7 +390,15 @@
             db.collection(path+'/fy_history').onSnapshot(s => { appState.data.fyHistory = s.docs.map(d=>({id:d.id, ...d.data()})); updateUI(); });
             
             db.doc(path+'/config/settings').onSnapshot(s => {
-                if(s.exists) { appState.data.settings = s.data(); updateUI(); }
+                if(s.exists) { 
+                    const sets = s.data();
+                    // Migrate payment modes if they are strings
+                    if (sets.paymentModes && typeof sets.paymentModes[0] === 'string') {
+                        sets.paymentModes = sets.paymentModes.map(p => ({ name: p, color: '#888' }));
+                    }
+                    appState.data.settings = sets; 
+                    updateUI(); 
+                }
                 else db.doc(path+'/config/settings').set(appState.data.settings);
             });
         }
@@ -381,7 +413,7 @@
         // 4. ACTION HANDLERS
         function addTransaction(e) {
             e.preventDefault();
-            closeModal('transaction-modal'); // Close immediately
+            closeModal('transaction-modal'); 
             
             const date = document.getElementById('t-date').value;
             const type = document.querySelector('input[name="t-type"]:checked').value;
@@ -415,13 +447,12 @@
 
         async function addCCBill(e) {
             e.preventDefault();
-            closeModal('cc-modal'); // Close immediately
+            closeModal('cc-modal'); 
 
-            const monthYear = document.getElementById('cc-month').value;
+            const monthYear = document.getElementById('cc-month').value; // YYYY-MM from input type=month
             const card = document.getElementById('cc-card').value;
             const amount = parseFloat(document.getElementById('cc-amount').value);
 
-            // Find existing to update
             const existing = appState.data.creditCards.find(c => c.monthYear === monthYear && c.card === card);
 
             if (appState.isCloud) {
@@ -479,7 +510,15 @@
              if(appState.isCloud) appState.db.doc(`artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}/config/settings`).set(appState.data.settings);
         }
         
-        function addPaymentMode() { const val = document.getElementById('new-pay-mode').value; if(val) { appState.data.settings.paymentModes.push(val); document.getElementById('new-pay-mode').value=''; if(appState.isCloud) saveSettings(); else saveData(); } }
+        function addPaymentMode() { 
+            const val = document.getElementById('new-pay-mode').value; 
+            const col = document.getElementById('new-pay-color').value;
+            if(val) { 
+                appState.data.settings.paymentModes.push({ name: val, color: col }); 
+                document.getElementById('new-pay-mode').value=''; 
+                if(appState.isCloud) saveSettings(); else saveData(); 
+            } 
+        }
         function deletePaymentMode(i) { if(confirm('Delete?')) { appState.data.settings.paymentModes.splice(i, 1); if(appState.isCloud) saveSettings(); else saveData(); }}
 
         function addTrackedCard() { const val = document.getElementById('new-card-track').value; if(val) { appState.data.settings.trackedCards.push(val); document.getElementById('new-card-track').value=''; if(appState.isCloud) saveSettings(); else saveData(); } }
@@ -496,7 +535,6 @@
             if(appState.isCloud) {
                 const path = `artifacts/${HARDCODED_CONFIG.projectId}/users/${appState.userId}`;
                 appState.db.collection(path+'/fy_history').add(archive);
-                // Simple batch delete
                 const batch = appState.db.batch();
                 txs.forEach(t => batch.delete(appState.db.doc(path+'/transactions/'+t.id)));
                 batch.commit();
@@ -518,10 +556,16 @@
         function populateDropdowns() {
             const makeOpts = (arr) => arr.map(x => `<option value="${x.name || x}">${x.name || x}</option>`).join('');
             document.getElementById('t-category').innerHTML = makeOpts(appState.data.settings.categories);
-            document.getElementById('t-paid-via').innerHTML = makeOpts(appState.data.settings.paymentModes);
+            
+            // Payment Modes might be objects now
+            const payModes = appState.data.settings.paymentModes;
+            document.getElementById('t-paid-via').innerHTML = payModes.map(p => {
+                const name = typeof p === 'object' ? p.name : p;
+                return `<option value="${name}">${name}</option>`;
+            }).join('');
+            
             document.getElementById('cc-card').innerHTML = makeOpts(appState.data.settings.trackedCards);
             
-            // Fix: Force refresh options but try to keep value
             const catF = document.getElementById('daily-filter-cat');
             const currentVal = catF.value;
             catF.innerHTML = `<option value="all">All Categories</option>` + makeOpts(appState.data.settings.categories);
@@ -584,7 +628,6 @@
             const txs = appState.data.transactions.sort((a,b) => new Date(b.date) - new Date(a.date));
             const months = [...new Set(txs.map(t => t.date.substring(0,7)))].sort().reverse();
             
-            // Fix: Rebuild Month filter safely
             const curM = mFilter.value;
             mFilter.innerHTML = `<option value="all">All Months</option>` + months.map(m=>`<option value="${m}">${m}</option>`).join('');
             if(months.includes(curM)) mFilter.value = curM;
@@ -592,7 +635,6 @@
 
             let list = txs;
             if(mFilter.value !== 'all') list = list.filter(t => t.date.startsWith(mFilter.value));
-            // Check for valid category filter. If "All Categories" or empty, show everything.
             if(cFilter.value !== 'all' && cFilter.value !== '') list = list.filter(t => t.category === cFilter.value);
 
             const tbody = document.getElementById('transactions-list');
@@ -604,11 +646,19 @@
                 list.forEach(t => {
                     const isInc = t.type === 'income';
                     const col = getCatColor(t.category);
+                    const payCol = getPayColor(t.paidVia);
+                    
                     tbody.innerHTML += `
                         <tr class="hover:bg-[#1a1a1a] border-b border-[#2a2a2a]">
                             <td class="p-4 text-gray-400 font-mono text-xs">${t.date}</td>
                             <td class="p-4"><span class="px-3 py-1 rounded-full text-xs font-bold uppercase" style="background:${col}33; color:${col}">${t.category}</span></td>
-                            <td class="p-4"><div class="text-white text-sm">${t.note || '-'}</div><div class="text-xs text-gray-600 mt-1">${t.paidVia}</div></td>
+                            <td class="p-4">
+                                <div class="text-white text-sm">${t.note || '-'}</div>
+                                <div class="text-xs mt-1 flex items-center gap-1">
+                                    <div class="w-1.5 h-1.5 rounded-full" style="background:${payCol}"></div>
+                                    <span class="text-gray-500">${t.paidVia}</span>
+                                </div>
+                            </td>
                             <td class="p-4 text-right font-mono font-bold ${isInc ? 'text-[#9be2b3]' : 'text-[#ff6b6b]'}">${isInc?'+':'-'}${fmtMoney(t.amount)}</td>
                             <td class="p-4 text-center"><button onclick="deleteTransaction('${t.id}')" class="text-gray-600 hover:text-red-500 transition-colors">✕</button></td>
                         </tr>
@@ -647,7 +697,13 @@
 
         function renderSettings() {
             document.getElementById('settings-categories').innerHTML = appState.data.settings.categories.map((c, i) => `<div class="flex justify-between items-center p-2 bg-[#1a1a1a] rounded-lg border border-[#333] mb-1"><div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full" style="background:${c.color}"></div><span class="text-sm text-gray-300">${c.name}</span></div><button onclick="deleteCategory(${i})" class="text-gray-600 hover:text-red-500">✕</button></div>`).join('');
-            document.getElementById('settings-payments').innerHTML = appState.data.settings.paymentModes.map((p, i) => `<div class="flex justify-between items-center p-2 bg-[#1a1a1a] rounded-lg border border-[#333] mb-1"><span class="text-sm text-gray-300">${p}</span><button onclick="deletePaymentMode(${i})" class="text-gray-600 hover:text-red-500">✕</button></div>`).join('');
+            
+            document.getElementById('settings-payments').innerHTML = appState.data.settings.paymentModes.map((p, i) => {
+                const name = typeof p === 'object' ? p.name : p;
+                const color = typeof p === 'object' ? p.color : '#888';
+                return `<div class="flex justify-between items-center p-2 bg-[#1a1a1a] rounded-lg border border-[#333] mb-1"><div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full" style="background:${color}"></div><span class="text-sm text-gray-300">${name}</span></div><button onclick="deletePaymentMode(${i})" class="text-gray-600 hover:text-red-500">✕</button></div>`;
+            }).join('');
+            
             document.getElementById('settings-cards').innerHTML = appState.data.settings.trackedCards.map((c, i) => `<div class="flex justify-between items-center p-2 bg-[#1a1a1a] rounded-lg border border-[#333] mb-1"><span class="text-sm text-gray-300">${c}</span><button onclick="deleteTrackedCard(${i})" class="text-gray-600 hover:text-red-500">✕</button></div>`).join('');
         }
         
@@ -656,10 +712,8 @@
             const legendEl = document.getElementById('cc-legend');
             if(!chartDiv || !legendEl) return;
 
-            // Get Sorted Unique Months
             let months = [...new Set(appState.data.creditCards.map(c => c.monthYear))].sort();
 
-            // Allow rendering even with 1 month
             if (months.length === 0) {
                  chartDiv.innerHTML = '<div class="flex items-center justify-center w-full h-full text-gray-500 text-xs">No data to display</div>';
                  legendEl.innerHTML = '';
@@ -667,10 +721,8 @@
             }
 
             const cards = appState.data.settings.trackedCards;
-            // Dynamic colors
-            const baseColors = ['#f97316', '#eab308', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#ec4899', '#6366f1']; 
+            const colors = ['#f97316', '#eab308', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#ec4899', '#6366f1']; 
             
-            // Prepare Data Map: month -> { card: amount }
             const dataMap = {};
             let maxVal = 0;
             
@@ -683,29 +735,30 @@
                     if (val > maxVal) maxVal = val;
                 });
             });
-            maxVal = maxVal * 1.1; // Headroom
+            maxVal = maxVal > 0 ? maxVal * 1.1 : 1000; 
 
-            // Render HTML Bars
             let html = '';
             
             months.forEach(m => {
-                const dateObj = new Date(m + '-01');
-                const label = dateObj.toLocaleDateString('en-US', {month:'short', year:'numeric'}); // Dec 2025
+                const [yr, mn] = m.split('-');
+                const dateObj = new Date(parseInt(yr), parseInt(mn)-1, 1);
+                const label = dateObj.toLocaleDateString('en-US', {month:'short', year:'numeric'});
                 
-                // Group Container
-                html += `<div class="flex flex-col items-center justify-end h-full gap-2 min-w-[80px]">
-                            <div class="flex items-end gap-1 h-full w-full justify-center">`;
+                html += `<div class="flex flex-col items-center justify-end h-full gap-2 min-w-[120px]">
+                            <div class="flex items-end gap-1 h-full w-full justify-center border-b border-[#333] pb-2">`;
                 
-                // Bars for each card in this month
                 cards.forEach((card, idx) => {
                     const val = dataMap[m][card] || 0;
                     const h = (val / maxVal) * 100;
-                    const col = baseColors[idx % baseColors.length];
+                    const col = colors[idx % colors.length];
+                    const displayH = Math.max(h, 2); 
                     
                     if(val > 0) {
-                        html += `<div class="chart-bar w-3 rounded-t-sm transition-all duration-500 hover:opacity-80 relative group" style="height:${h}%; background-color:${col};">
+                        html += `<div class="chart-bar w-4 rounded-t-sm transition-all duration-500 hover:opacity-80 relative group" style="height:${displayH}%; background-color:${col};">
                                     <div class="chart-tooltip absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-[10px] rounded opacity-0 pointer-events-none z-10 border border-[#333] transition-opacity whitespace-nowrap">₹${val}</div>
                                  </div>`;
+                    } else {
+                        html += `<div class="w-4"></div>`; 
                     }
                 });
                 
@@ -716,10 +769,9 @@
 
             chartDiv.innerHTML = html;
 
-            // Legend
             legendEl.innerHTML = cards.map((c, i) => `
                 <div class="flex items-center gap-2 text-xs font-medium text-gray-400">
-                    <div class="w-2 h-2 rounded-full" style="background:${baseColors[i % baseColors.length]}"></div>
+                    <div class="w-2 h-2 rounded-full" style="background:${colors[i % colors.length]}"></div>
                     ${c}
                 </div>
             `).join('');

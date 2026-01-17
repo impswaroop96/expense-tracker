@@ -45,10 +45,10 @@
                 <div class="w-8 h-8 bg-[#e2b39b] rounded-lg flex items-center justify-center text-black font-bold">ET</div>
                 EXPENSE
             </h1>
-            <div class="mt-4 w-full flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-[#222] border border-[#333]">
+            <button onclick="showSection('settings')" class="mt-4 w-full flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-[#222] hover:bg-[#333] border border-[#333]">
                 <div id="status-dot" class="w-2 h-2 rounded-full bg-gray-500"></div>
-                <span id="status-text" class="text-gray-400 font-medium truncate">Connecting...</span>
-            </div>
+                <span id="status-text" class="text-gray-400 font-medium truncate">Offline Mode</span>
+            </button>
         </div>
         
         <nav class="flex-1 p-4 space-y-1">
@@ -73,6 +73,7 @@
             <div id="offline-banner" class="mb-6 p-4 rounded-xl bg-gray-800 border border-gray-700 flex items-start gap-3" style="display:none;">
                 <div class="text-yellow-500 font-bold">⚠</div>
                 <div><h4 class="text-white font-bold text-sm">Offline Mode</h4><p class="text-gray-400 text-xs">Data is local. Check connection.</p></div>
+                <button onclick="showSection('settings')" class="ml-auto text-xs bg-white text-black px-3 py-1 rounded font-bold">Connect</button>
             </div>
 
             <div class="flex justify-between items-center mb-8">
@@ -145,15 +146,16 @@
                 </div>
 
                 <!-- Graph 70% -->
-                <div class="w-full lg:w-[70%] card p-6 rounded-3xl flex flex-col h-96 lg:h-auto order-1 lg:order-2">
+                <div class="w-full lg:w-[70%] card p-6 rounded-3xl flex flex-col min-h-[400px] order-1 lg:order-2">
                     <div class="flex justify-between items-center mb-4">
                          <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest">Spending Trend</h3>
                     </div>
                     
                     <div class="flex-1 flex flex-col relative overflow-hidden">
-                        <!-- Chart Container -->
-                        <div id="cc-html-chart" class="flex-1 flex items-end gap-2 overflow-x-auto pb-6 custom-scrollbar" style="min-width: 0;">
+                        <!-- Chart Container with explicit height to prevent collapse -->
+                        <div id="cc-html-chart" class="flex-1 flex items-end gap-2 overflow-x-auto pb-6 custom-scrollbar" style="min-width: 0; min-height: 250px;">
                              <!-- Bars injected here -->
+                             <div class="flex items-center justify-center w-full h-full text-gray-500 text-xs">No data to display</div>
                         </div>
                     </div>
                     
